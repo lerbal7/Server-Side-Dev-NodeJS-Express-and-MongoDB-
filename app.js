@@ -1,7 +1,7 @@
 var createError = require('http-errors');
 var express = require('express');
 var path = require('path');
-var cookieParser = require('cookie-parser');
+var cookieParser = require('cookie-parser'); // We'll need this to work with cookies
 var logger = require('morgan');
 
 var indexRouter = require('./routes/index');
@@ -29,43 +29,54 @@ app.set('view engine', 'jade');
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
+app.use(cookieParser('12345-67890-09876-54321'));
 
-// first middleware
+// We change the auth function to use cookies
 function auth(req, res, next) {
-  console.log(req.headers); // What's coming from client side
+  console.log(req.signedCookies); 
 
-  var authHeader = req.headers.authorization; // If the auth header is not there,
-  // there is no authentication
+  if (!req.signedCookies.user) { // If cookies are not stored already..
+    var authHeader = req.headers.authorization;
 
-  if (!authHeader) {
-    var err = new Error('You are not authorized!');
-    res.setHeader('WWW-Authenticate', 'Basic'); // WWW-Authenticate is a header need when returning a 401 Error code
-    err.status = 401; // Code for unauthorized access
-    return next(err);
+    if (!authHeader) {
+      var err = new Error('You are not authorized!');
+      res.setHeader('WWW-Authenticate', 'Basic'); 
+      err.status = 401;
+      return next(err);
+    }
+
+    var auth = new Buffer.from(authHeader.split(' ')[1], 'base64')
+    .toString().split(':');
+
+    var username = auth[0];
+    var password = auth[1];
+
+    if (username === 'admin' && password === 'password') {
+      res.cookie('user', 'admin', { signed: true }) // This cookie will be added
+      // automatically in every request
+      next(); 
+    }
+    else {
+      var err = new Error('You are not authorized!');
+
+      err.status = 401; 
+      return next(err);
+    }
+  }
+  else {
+    if (req.signedCookies.user === 'admin') {// The cookie is already stored
+      next();
+    }
+    else {
+      var err = new Error('You are not authorized!');
+
+      res.setHeader('WWW-Authenticate', 'Basic');
+      err.status = 401; 
+      return next(err);
+    }
   }
 
-  // Typical Auth Header --> Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==
-  // We know that when the user enters his credentials, they are sent
-  // encoded in base64 (in this case). This encoding is decoded by the server
-  // to verify the correct authentication. The encoding contains the word
-  // Basic, a space and a string which contains the username and the password
-  // separated by a semicolon. So first we need to split that whole string 
-  // taking into account the space and then we need to take the second string
-  // and split it again but this time taking
-  // into account the semicolon. Therefore we will have two elements inside that
-  // second element, the username
-  // and the password.
-  var auth = new Buffer(authHeader.split(' ')[1], 'base64')
-  .toString().split(':');
-
-  var username = auth[0];
-  var password = auth[1];
-
-  // Suppose these are the credentials
-  if (username === 'admin' && password === 'password') {
-    next(); // allows this middleware to pass to the next one
-  }
+  
 }
 
 app.use(auth); // Before client can access any of the resources, authentication is needed
