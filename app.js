@@ -30,6 +30,46 @@ app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+
+// first middleware
+function auth(req, res, next) {
+  console.log(req.headers); // What's coming from client side
+
+  var authHeader = req.headers.authorization; // If the auth header is not there,
+  // there is no authentication
+
+  if (!authHeader) {
+    var err = new Error('You are not authorized!');
+    res.setHeader('WWW-Authenticate', 'Basic'); // WWW-Authenticate is a header need when returning a 401 Error code
+    err.status = 401; // Code for unauthorized access
+    return next(err);
+  }
+
+  // Typical Auth Header --> Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==
+  // We know that when the user enters his credentials, they are sent
+  // encoded in base64 (in this case). This encoding is decoded by the server
+  // to verify the correct authentication. The encoding contains the word
+  // Basic, a space and a string which contains the username and the password
+  // separated by a semicolon. So first we need to split that whole string 
+  // taking into account the space and then we need to take the second string
+  // and split it again but this time taking
+  // into account the semicolon. Therefore we will have two elements inside that
+  // second element, the username
+  // and the password.
+  var auth = new Buffer(authHeader.split(' ')[1], 'base64')
+  .toString().split(':');
+
+  var username = auth[0];
+  var password = auth[1];
+
+  // Suppose these are the credentials
+  if (username === 'admin' && password === 'password') {
+    next(); // allows this middleware to pass to the next one
+  }
+}
+
+app.use(auth); // Before client can access any of the resources, authentication is needed
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', indexRouter);
